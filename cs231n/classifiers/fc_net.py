@@ -306,7 +306,6 @@ class FullyConnectedNet(object):
 
         dataLoss, dx = softmax_loss(scores, y)
         regPenalty = 0
-        print(L)
         for j in range(L):
           W = self.params["W"+str(j)]
           regPenalty += np.sum(np.square(W))
@@ -314,7 +313,7 @@ class FullyConnectedNet(object):
         regLoss = 0.5 * self.reg * regPenalty
 
         loss += dataLoss + regLoss
-        for j in reversed(range(L-1)):
+        for j in reversed(range(L)):
           if self.use_dropout:
             dx = dropout_backward(dx, caches["cache"+str(j)])
             
