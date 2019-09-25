@@ -270,14 +270,13 @@ class FullyConnectedNet(object):
         ############################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         L = self.num_layers - 1
-        caches = {}
+        caches = []
         x = X
         for i in range(L):
-          x, caches["cache{0}".format(i)] = affine_relu_forward(x, self.params["W"+str(i)], self.params["b"+str(i)])
+          x, cache = affine_relu_forward(x, self.params["W"+str(i)], self.params["b"+str(i)])
           if self.use_dropout:
-            x, caches["cache{0}".format(i)] = dropout_forward(x, self.dropout_param)
-            print(x.shape)
-            print(len(caches))
+            x, cache = dropout_forward(x, self.dropout_param)
+        caches.append(cache)
         scores = x
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################
@@ -312,19 +311,20 @@ class FullyConnectedNet(object):
 
         regLoss = 0.5 * self.reg * regPenalty
 
-        loss += dataLoss + regLoss
-        for j in reversed(range(L)):
-          if self.use_dropout:
-            dx = dropout_backward(dx, caches["cache"+str(j)])
-            
-            dx, dW, db = affine_relu_backward(dx, caches["cache"+str(j)])
-            grads["W"+str(j)] = dW + self.reg * dW
-            grads["b"+str(j)] = db
-          else:
-            dx, dW, db = affine_relu_backward(dx, caches["cache"+str(j)])
-            grads["W"+str(j)] = dW + self.reg * dW
-            grads["b"+str(j)] = db
+        loss = dataLoss + regLoss
+        print(len(caches))
+        dx, dW, db = affine_relu_backward(dx, caches[-1])
+        grads["W"+str(L-1)] = dW + self.reg * dW
+        grads["b"+str(L-1)] = db
         
+        for j in reversed(range(L-1)):
+          if self.use_dropout:
+            dx = dropout_backward(dx, caches[j])
+          if self.normalization == "batchnorm":
+            print("batchnorm")
+          dx, dW, db = affine_relu_backward(dx, caches[j])
+          grads["W"+str(j)] = dW + self.reg * dW
+          grads["b"+str(j)] = db
         
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         ############################################################################

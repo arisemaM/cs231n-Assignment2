@@ -156,12 +156,22 @@ def adam(w, dw, config=None):
 
     alpha = config['learning_rate']
     epsilon = config['epsilon']
+    t = config['t']
+    m = config['m']
+    beta1 = config['beta1']
+    beta2 = config['beta2']
+    v = config['v']
 
-    config['m'] = config['beta1']*config['m'] + (1-config['beta1'])*dw # update biased first moment estimate
-    config['v'] = config['beta2']*config['v'] + (1-config['beta2']*np.square(dw)) # update biased second raw moment estimate
-    mt = config['m']/(1-config['beta1']**config['t']) # compute bias-corrected first moment estimate
-    vt = config['v'] / (1-config['beta2']**config['t']) # compute bias-corrected second raw moment estimate
+    t += 1
+    m = beta1*m + (1-beta1)*dw # update biased first moment estimate
+    v = beta2*v + (1-beta2)*np.square(dw) # update biased second raw moment estimate
+    mt = m/(1-(beta1**t)) # compute bias-corrected first moment estimate
+    vt = v / (1-(beta2**t)) # compute bias-corrected second raw moment estimate
     next_w = w + -alpha*mt / (np.sqrt(vt)+epsilon)
+
+    config['m'] = m
+    config['t'] = t
+    config['v'] = v
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
     #                             END OF YOUR CODE                            #

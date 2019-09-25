@@ -196,8 +196,20 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        batchMean = np.mean(x, axis = 0)
+        batchVariance = np.mean(np.sum(np.square(x - batchMean)))
 
+        running_mean = (momentum * running_mean) + ((1-momentum) * batchMean)
+        running_var = (momentum * running_var) + ((1-momentum) * batchMean)
+
+        xbatchMean = x - batchMean
+        sD = np.sqrt(batchVariance + eps)
+        isD = 1/sD
+
+        normX = (xbatchMean) * (isD)  # normalize
+        out = gamma*normX + beta # scale by gamma & shift by beta
+  
+        cache = (batchMean, batchVariance, x, normX, beta, gamma, eps, xbatchMean, isD)
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
         #                           END OF YOUR CODE                          #
@@ -211,7 +223,8 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-        pass
+        normX = (x - running_mean) / np.sqrt(running_var + eps) # sqrt(variance) = standard deviation
+        out = gamma*normX + beta
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
@@ -252,8 +265,30 @@ def batchnorm_backward(dout, cache):
     # might prove to be helpful.                                              #
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
+    N,D = dout.shape
+    batchMean, batchVariance, x, normX, beta, gamma, eps, xbatchMean, iSD = cache
 
-    pass
+    dbeta = np.sum(dout, axis=0)
+    dgamma = np.sum(dout*normX, axis=0)
+    dnormX = np.sum(dout*gamma, axis=0)
+
+    # np.sqrt(batchVariance + eps)
+    # iSD = float(1)/np.sqrt(batchVariance + eps) # inversion of standard deviation
+    sq = np.sqrt(batchVariance + eps)
+    # normx = x-batchMean * isd
+    diSD = dnormX * xbatchMean
+    dxBatchMean1 = dnormX * iSD
+
+    # batch variance
+    dsD = 0.5 * iSD * (1/(batchVariance+eps))
+    # np.mean(np.sum(np.square(x - batchMean)))
+    dsq = np.mean(np.ones((N,D)) * dsD)
+    dxBatchMean2 = 2 * dsq * (x-batchMean)
+
+    dx1 = (dxBatchMean1 + dxBatchMean2) 
+    dbatchMean = -1 * np.sum(dxBatchMean2 + dxBatchMean1, axis=0)
+    dx2 = np.mean(np.ones((N,D)) * dbatchMean)
+    dx = dx1 + dx2
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -288,7 +323,47 @@ def batchnorm_backward_alt(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N,D = dout.shape
+    batchMean, batchVariance, x, normX, beta, gamma, eps, xbatchMean, iSD = cache
+
+    dbeta = np.sum(dout, axis=0)
+    dgamma = np.sum(dout*normX, axis=0)
+    dnormX = np.sum(dout*gamma, axis=0)
+
+    # dLdx = dLdY*dYdx                    Y here is normX
+    
+    # ---1
+    # dYdsD > dsDdV >    dVdx            One stream of computation graph
+    #      dYdV      >    dVdx            
+    #               dYdx
+    # 
+    #  => dYdx = dYdsD * dsDdV * dVdx
+    # ---2                                Another stream in computation graph
+    #  dYdM > dMdx
+    #     dYdx
+    # 
+    # => dYdx = dYdM * dMdx
+    # 
+    # => dLdx = dLdY * (dYdM * dMdx + dYdsD * dsDdV * dVdx)
+
+    # -------------------------------------------------------------------------------
+    # batchMean = np.mean(np.sum(x, axis = 0))
+    # batchVariance = np.mean(np.sum(np.square(x - batchMean)))
+
+    # normX = (x - batchMean) / np.sqrt(batchVariance + eps)  # normalize 
+
+    # iSD = 1/np.sqrt(batchVariance + eps)
+
+
+    dYdsD = dnormX * xbatchMean
+    dsDdV = -0.5 * ((batchVariance + eps)**(-(3/2)))
+    dVdx = 2 * np.mean(x - batchMean)
+
+    dYdM = dnormX * iSD
+    dMdx = x - batchMean
+
+    dx = dnormX * (dYdM * dMdx + dYdsD * dsDdV * dVdx)
+
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -460,7 +535,6 @@ def dropout_backward(dout, cache):
         # TODO: Implement training phase backward pass for inverted dropout   #
         #######################################################################
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
         dx = dout * mask
 
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
@@ -507,8 +581,44 @@ def conv_forward_naive(x, w, b, conv_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, C, H, W = x.shape
+    F, C, HH, WW = w.shape
+    stride = conv_param['stride']
+    pad = conv_param['pad']
+    
+    # pad_width: ((before_1, after_1), … (before_N, after_N)) unique pad widths for each axis.
+    paddedInput = np.pad(x, pad_width = ((0,0), (0,0), (pad, pad), (pad, pad)), constant_values=0) # mode is constant by default
+    Ho = int(1 + ((paddedInput.shape[2] - HH) / stride)) # locations after convolution along height
+    Wo = int(1 + ((paddedInput.shape[3] - WW) / stride)) # locations after convolution along width
+    out = np.zeros((N, F, Ho, Wo))
+    # convolve each attr of the input layer by the filter
+    
+    # im2col implementation
+    # out = np.zeros((N, Ho*Wo*F))
+    # xCol = np.reshape(paddedInput, (N, HH*WW*C, Ho*Wo)) # problem here, isn't replicated. initialize an array with appropriate sizes and populate each one
+    # print("hhh")
+    # print(xCol.shape)
+    # wr = np.reshape(w, (F, HH*WW*C))
+    # print("hhh")
+    # print(wr.shape)
+    # for n in range(N):
+    #   out[n] = np.dot(wr,xCol[n]) + b
+    # print("--here--")
+    # print(out.shape)
 
+    for n in range(N):
+      for f in range(F):
+        kernel = w[f, :, :, :] 
+        bias = b[f]
+        for ho in range(Ho): # scan receptive fields top to bottom
+          for wo in range(Wo): # scan recptive fields left to right 
+
+            # x[i*stride:i*stride+filter, filter, :] in case of shape = (h,w,c)
+            receptiveField = paddedInput[n, :, (ho*stride):(ho*stride+HH), (wo*stride):(wo*stride+WW)]
+
+            out[n, f, ho, wo] = np.sum(np.multiply(kernel, receptiveField)) + bias
+
+    assert (out.shape) == (N, F, Ho, Wo), "Not convoluted properly"
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
     #                             END OF YOUR CODE                            #
@@ -535,9 +645,27 @@ def conv_backward_naive(dout, cache):
     # TODO: Implement the convolutional backward pass.                        #
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
-
-    pass
-
+    x, w, b, conv_param = cache
+    stride = conv_param['stride']
+    pad = conv_param['pad']
+    N, C, H, W = x.shape
+    F, C, HH, WW = w.shape
+    
+    paddedInput = np.pad(x, pad_width = ((0,0), (0,0), (pad, pad), (pad, pad)), constant_values=0) # mode is constant by default
+    Ho = int(1 + ((paddedInput.shape[2] - HH) / stride)) # locations after convolution along height
+    Wo = int(1 + ((paddedInput.shape[3] - WW) / stride)) # locations after convolution along width
+    
+    dx = np.zeros((paddedInput.shape))
+    dw = np.zeros((w.shape))
+    
+    for n in range(N):
+      for f in range(F):
+        kernel = w[f,:,:,:]
+        for ho in range(Ho): # scan receptive fields top to bottom
+          for wo in range(Wo): # scan receptive fields left to right
+            dx[n, :, (ho*stride):(ho*stride+HH), (w*stride):(w*stride+WW)] += kernel * dout[n, f, ho, wo]
+            dw[f,:,:,:] += paddedInput[n, :, (ho*stride):(ho*stride+HH), (w*stride):(w*stride+WW)] * dout[n, f, ho, wo]
+    
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
     #                             END OF YOUR CODE                            #
@@ -777,7 +905,6 @@ def svm_loss(x, y):
     dx[np.arange(N), y] -= num_pos
     dx /= N
     return loss, dx
-
 
 def softmax_loss(x, y):
     """
