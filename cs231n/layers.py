@@ -588,8 +588,8 @@ def conv_forward_naive(x, w, b, conv_param):
     
     # pad_width: ((before_1, after_1), … (before_N, after_N)) unique pad widths for each axis.
     paddedInput = np.pad(x, pad_width = ((0,0), (0,0), (pad, pad), (pad, pad)), constant_values=0) # mode is constant by default
-    Ho = int(1 + ((paddedInput.shape[2] - HH) / stride)) # locations after convolution along height
-    Wo = int(1 + ((paddedInput.shape[3] - WW) / stride)) # locations after convolution along width
+    Ho = int((paddedInput.shape[2] - HH) / stride) + 1 # locations after convolution along height
+    Wo = int((paddedInput.shape[3] - WW) / stride) + 1 # locations after convolution along width
     out = np.zeros((N, F, Ho, Wo))
     # convolve each attr of the input layer by the filter
     
@@ -652,20 +652,26 @@ def conv_backward_naive(dout, cache):
     F, C, HH, WW = w.shape
     
     paddedInput = np.pad(x, pad_width = ((0,0), (0,0), (pad, pad), (pad, pad)), constant_values=0) # mode is constant by default
-    Ho = int(1 + ((paddedInput.shape[2] - HH) / stride)) # locations after convolution along height
-    Wo = int(1 + ((paddedInput.shape[3] - WW) / stride)) # locations after convolution along width
+    Ho = int((paddedInput.shape[2] - HH) / stride) + 1 # locations after convolution along height
+    Wo = int((paddedInput.shape[3] - WW) / stride) + 1 # locations after convolution along width
     
-    dx = np.zeros((paddedInput.shape))
+    dx = np.zeros((x.shape))
+    dxPadded = np.zeros((paddedInput.shape))
     dw = np.zeros((w.shape))
-    
+    db = np.zeros((b.shape))
     for n in range(N):
       for f in range(F):
         kernel = w[f,:,:,:]
+        db[f] += np.sum(dout[n, f])
         for ho in range(Ho): # scan receptive fields top to bottom
           for wo in range(Wo): # scan receptive fields left to right
-            dx[n, :, (ho*stride):(ho*stride+HH), (w*stride):(w*stride+WW)] += kernel * dout[n, f, ho, wo]
-            dw[f,:,:,:] += paddedInput[n, :, (ho*stride):(ho*stride+HH), (w*stride):(w*stride+WW)] * dout[n, f, ho, wo]
-    
+            
+            receptiveFieldPrior = paddedInput[n, :, (ho*stride):(ho*stride+HH), (wo*stride):(wo*stride+WW)]
+            
+            dxPadded[n, :, (ho*stride):(ho*stride+HH), (wo*stride):(wo*stride+WW)] += np.multiply(kernel, dout[n, f, ho, wo])
+            dw[f,:,:,:] += np.multiply(receptiveFieldPrior, dout[n, f, ho, wo])
+      
+      dx[n,:,:,:] = dxPadded[n,:,pad:-pad,pad:-pad] # update gradient-wrt-x to it's non padded form
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
     #                             END OF YOUR CODE                            #
@@ -698,7 +704,25 @@ def max_pool_forward_naive(x, pool_param):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    N, C, H, W = x.shape
+
+    pH = pool_param['pool_height']
+    pW = pool_param['pool_width']
+    stride = pool_param['stride']
+
+    Ho = int((H - pH) / stride) + 1
+    Wo = int((W - pW) / stride) + 1
+
+    out = np.zeros((N, C, Ho, Wo))
+
+    for n in range(N):
+      for c in range(C):
+        for ho in range(Ho): # scan receptive fields top to bottom
+          for wo in range(Wo): # scan recptive fields left to right 
+
+            receptiveField = x[n, c, (ho*stride):(ho*stride+pH), (wo*stride):(wo*stride+pH)]
+
+            out[n, c, ho, wo] = np.max(receptiveField)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
@@ -725,7 +749,27 @@ def max_pool_backward_naive(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    pass
+    x, pool_param = cache
+
+    N, C, H, W = x.shape
+
+    pH = pool_param['pool_height']
+    pW = pool_param['pool_width']
+    stride = pool_param['stride']
+
+    Ho = int((H - pH) / stride) + 1
+    Wo = int((W - pW) / stride) + 1
+
+    dx = np.zeros((x.shape))
+
+    for n in range(N):
+      for c in range(C):
+        for ho in range(Ho): # scan receptive fields top to bottom
+          for wo in range(Wo): # scan recptive fields left to right 
+
+            receptiveField = x[n, c, (ho*stride):(ho*stride+pH), (wo*stride):(wo*stride+pH)]
+            maxMask = ( receptiveField == np.max(receptiveField))
+            dx[n, c, (ho*stride):(ho*stride+pH), (wo*stride):(wo*stride+pH)] = maxMask * dout[n, c, ho, wo]
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
