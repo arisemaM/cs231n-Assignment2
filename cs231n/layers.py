@@ -197,19 +197,18 @@ def batchnorm_forward(x, gamma, beta, bn_param):
         # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
         batchMean = np.mean(x, axis = 0)
-        batchVariance = np.mean(np.sum(np.square(x - batchMean)))
+        xbatchMean = x - batchMean
+        batchVariance = np.mean(np.square(xbatchMean), axis=0)
 
         running_mean = (momentum * running_mean) + ((1-momentum) * batchMean)
-        running_var = (momentum * running_var) + ((1-momentum) * batchMean)
-
-        xbatchMean = x - batchMean
+        running_var = (momentum * running_var) + ((1-momentum) * batchVariance)
+        
         sD = np.sqrt(batchVariance + eps)
-        isD = 1/sD
 
-        normX = (xbatchMean) * (isD)  # normalize
+        normX = (xbatchMean) / (sD)  # normalize
         out = gamma*normX + beta # scale by gamma & shift by beta
   
-        cache = (batchMean, batchVariance, x, normX, beta, gamma, eps, xbatchMean, isD)
+        cache = (batchMean, xbatchMean, batchVariance, sD, normX, beta, gamma, eps)
         # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
         #######################################################################
         #                           END OF YOUR CODE                          #
@@ -266,30 +265,32 @@ def batchnorm_backward(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     N,D = dout.shape
-    batchMean, batchVariance, x, normX, beta, gamma, eps, xbatchMean, iSD = cache
+    batchMean, xbatchMean, batchVariance, sD, normX, beta, gamma, eps = cache
 
-    dbeta = np.sum(dout, axis=0)
-    dgamma = np.sum(dout*normX, axis=0)
-    dnormX = np.sum(dout*gamma, axis=0)
+    dbeta = np.sum(dout, axis = 0)
+    dgamma = np.sum(dout*normX, axis = 0)
+    dnormX = np.sum(dout*gamma, axis = 0)
 
     # np.sqrt(batchVariance + eps)
-    # iSD = float(1)/np.sqrt(batchVariance + eps) # inversion of standard deviation
-    sq = np.sqrt(batchVariance + eps)
+    iSD = 1/sD # inversion of standard deviation
+    # sq = np.sqrt(batchVariance + eps)
     # normx = x-batchMean * isd
-    diSD = dnormX * xbatchMean
+    diSD = np.sum(dnormX * xbatchMean, axis = 0)
     dxBatchMean1 = dnormX * iSD
 
     # batch variance
-    dsD = 0.5 * iSD * (1/(batchVariance+eps))
+    dsD = -1 / (sD ** 2) * diSD
+    # print(diSD, dsD, N)
+    dbatchVariance = 0.5 * iSD * dsD
     # np.mean(np.sum(np.square(x - batchMean)))
-    dsq = np.mean(np.ones((N,D)) * dsD)
-    dxBatchMean2 = 2 * dsq * (x-batchMean)
+    dsq = 1 /N * np.ones((N,D)) * dbatchVariance
+    dxBatchMean2 = 2 * dsq * (xbatchMean)
 
     dx1 = (dxBatchMean1 + dxBatchMean2) 
     dbatchMean = -1 * np.sum(dxBatchMean2 + dxBatchMean1, axis=0)
-    dx2 = np.mean(np.ones((N,D)) * dbatchMean)
-    dx = dx1 + dx2
-
+    dx2 = 1 / np.ones((N,D)) * dbatchMean * N
+    # dx = dx1 + dx2
+    dx = (gamma * iSD / N) * (N * dout - normX * dgamma - dbeta)
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
     #                             END OF YOUR CODE                            #
@@ -323,8 +324,8 @@ def batchnorm_backward_alt(dout, cache):
     ###########################################################################
     # *****START OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
 
-    N,D = dout.shape
-    batchMean, batchVariance, x, normX, beta, gamma, eps, xbatchMean, iSD = cache
+    N, D = dout.shape
+    batchMean, xbatchMean, batchVariance, sD, normX, beta, gamma, eps = cache
 
     dbeta = np.sum(dout, axis=0)
     dgamma = np.sum(dout*normX, axis=0)
@@ -352,18 +353,18 @@ def batchnorm_backward_alt(dout, cache):
 
     # normX = (x - batchMean) / np.sqrt(batchVariance + eps)  # normalize 
 
-    # iSD = 1/np.sqrt(batchVariance + eps)
+    iSD = 1/sD
 
 
-    dYdsD = dnormX * xbatchMean
-    dsDdV = -0.5 * ((batchVariance + eps)**(-(3/2)))
-    dVdx = 2 * np.mean(x - batchMean)
+    # dYdsD = dnormX * xbatchMean
+    # dsDdV = -0.5 * ((batchVariance + eps)**(-(3/2)))
+    # dVdx = 2 * np.mean(x - batchMean)
 
-    dYdM = dnormX * iSD
-    dMdx = x - batchMean
+    # dYdM = dnormX * iSD
+    # dMdx = x - batchMean
 
-    dx = dnormX * (dYdM * dMdx + dYdsD * dsDdV * dVdx)
-
+    # dx = dnormX * (dYdM * dMdx + dYdsD * dsDdV * dVdx)
+    dx = (gamma * iSD / N) * (N * dout - normX * dgamma - dbeta)
 
     # *****END OF YOUR CODE (DO NOT DELETE/MODIFY THIS LINE)*****
     ###########################################################################
